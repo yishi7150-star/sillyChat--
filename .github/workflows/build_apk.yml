@@ -1,0 +1,35 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch: # 允许手动点击按钮触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17' # Android构建通常需要Java 17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable' # 使用稳定版Flutter
+          
+      - name: Get Dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        # --release 表示构建正式版
+        # --no-sound-null-safety 是为了兼容旧代码，如果报错可以去掉
+        run: flutter build apk --release 
+        
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
