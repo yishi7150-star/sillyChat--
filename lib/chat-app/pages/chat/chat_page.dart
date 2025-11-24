@@ -1569,8 +1569,7 @@ class _SplitBubbleWrapperState extends State<SplitBubbleWrapper> {
             alternativeContent: [null],
             style: widget.message.style,
             // 手动补全其他必须参数，避免报错
-            resPath: [], 
-            translate: null,
+            resPath: [],
             visbility: widget.message.visbility,
           );
 
