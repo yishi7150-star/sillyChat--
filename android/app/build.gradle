@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.bilimited.silly_chat"
-    compileSdk = 34
+    compileSdk = 35
     
 
     compileOptions {
