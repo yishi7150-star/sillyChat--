@@ -463,9 +463,11 @@ class _ChatPageState extends State<ChatPage> {
     sessionController.updateMessage(message.time, message);
   }
 
-  // 消息气泡
+// 消息气泡 (已修改支持拆分显示)
   Widget _buildMessageBubble(MessageModel message, MessageModel? lastMessage,
       {int index = 0, bool isNarration = false}) {
+    
+    // 1. 构建原始气泡
     var messageBubble = MessageBubble(
       chat: chat,
       message: message,
@@ -487,17 +489,45 @@ class _ChatPageState extends State<ChatPage> {
       state: sessionController.aiState,
     );
 
-    // 防遮挡设计
-    return chat.messages.isEmpty || message == chat.messages.first
+    // 2. 包装防遮挡逻辑
+    Widget content = chat.messages.isEmpty || message == chat.messages.first
         ? Column(
             children: [
-              SizedBox(
-                height: 104,
-              ),
+              const SizedBox(height: 104),
               messageBubble,
             ],
           )
         : messageBubble;
+
+    // 3. 判断是否需要拆分功能
+    // 条件：是角色消息 且 包含空行 且 不是多选状态 且 不是旁白
+    bool isAi = message.senderId == chat.assistantId || 
+                (chat.characters.any((c) => c.id == message.senderId));
+    bool hasParagraphs = message.content.trim().contains(RegExp(r'\n\s*\n'));
+
+    if (isAi && hasParagraphs && !_isMultiSelecting && !isNarration) {
+      return SplitBubbleWrapper(
+        chat: chat,
+        message: message,
+        originalBubble: content,
+        avatarWidth: avatarRadius * 2 + 20, // 估算的头像区域宽度
+        partBubbleBuilder: (partMsg) {
+          return MessageBubble(
+            chat: chat,
+            message: partMsg,
+            isSelected: false,
+            onTap: () {}, 
+            index: index,
+            onLongPress: null,
+            buildBottomButtons: (_, __) => const SizedBox.shrink(), 
+            onUpdateChat: _updateChat,
+            state: sessionController.aiState,
+          );
+        },
+      );
+    }
+
+    return content;
   }
 
   // 消息操作按钮小组件
@@ -902,7 +932,7 @@ class _ChatPageState extends State<ChatPage> {
                                   senderId: sessionController
                                       .aiState.currentAssistant,
                                   time: DateTime.now(),
-                                  alternativeContent: [null],
+                                alternativeContent: [null],
                                   style: sessionController.aiState.style),
                               messages.length == 0 ? null : messages[0])
                           : const SizedBox.shrink());
@@ -1479,3 +1509,140 @@ class _ChatPageState extends State<ChatPage> {
             )));
   }
 }
+
+// ==================== 新增的拆分气泡包装器 ====================
+class SplitBubbleWrapper extends StatefulWidget {
+  final ChatModel chat;
+  final MessageModel message;
+  final Widget originalBubble; 
+  final double avatarWidth;
+  final Widget Function(MessageModel partMsg) partBubbleBuilder;
+
+  const SplitBubbleWrapper({
+    Key? key,
+    required this.chat,
+    required this.message,
+    required this.originalBubble,
+    required this.partBubbleBuilder,
+    this.avatarWidth = 50.0,
+  }) : super(key: key);
+
+  @override
+  State<SplitBubbleWrapper> createState() => _SplitBubbleWrapperState();
+}
+
+class _SplitBubbleWrapperState extends State<SplitBubbleWrapper> {
+  bool _isSplitMode = false; 
+
+  List<String> _splitContent(String text) {
+    return text.trim().split(RegExp(r'\n\s*\n+'));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_isSplitMode) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          widget.originalBubble,
+          _buildToggleButton(context, "拆段阅读", Icons.unfold_more),
+        ],
+      );
+    }
+
+    final parts = _splitContent(widget.message.content);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...parts.asMap().entries.map((entry) {
+          final index = entry.key;
+          final text = entry.value;
+          final isFirst = index == 0;
+
+          // 构造临时消息对象
+          final partMsg = MessageModel(
+            id: widget.message.id + index,
+            content: text,
+            senderId: widget.message.senderId,
+            time: widget.message.time,
+            alternativeContent: [null],
+            style: widget.message.style,
+            // 手动补全其他必须参数，避免报错
+            title: widget.message.title,
+            resPath: [], 
+            translate: null,
+            visbility: widget.message.visbility,
+          );
+
+          // 构建气泡
+          Widget bubble = widget.partBubbleBuilder(partMsg);
+
+          // 通过 Stack 和 ClipRect 隐藏后续气泡的头像
+          // 这是一个视觉技巧，因为我们无法修改 MessageBubble 源码
+          if (!isFirst) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8.0),
+              child: Stack(
+                children: [
+                  bubble,
+                  // 用一个透明方块遮挡左侧头像区域，或者用 ClipRect 裁切
+                  // 这里简单使用 Padding 模拟对齐效果，如果不完美我们再调整
+                  Positioned.fill(
+                    child: Row(
+                      children: [
+                        // 用背景色遮挡头像 (如果背景不是纯色，这个方法可能露馅)
+                        // 更稳妥的方法是修改 MessageBubble 源码，但现在先用这个试试
+                        Container(
+                          width: widget.avatarWidth - 8, 
+                          color: Colors.transparent, 
+                        ),
+                        Expanded(child: Container()),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: bubble,
+          );
+        }).toList(),
+
+        _buildToggleButton(context, "合并显示", Icons.unfold_less),
+      ],
+    );
+  }
+
+  Widget _buildToggleButton(BuildContext context, String text, IconData icon) {
+    return Padding(
+      padding: EdgeInsets.only(left: widget.avatarWidth, bottom: 12, top: 4),
+      child: InkWell(
+        onTap: () => setState(() => _isSplitMode = !_isSplitMode),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: Theme.of(context).colorScheme.outline),
+              const SizedBox(width: 4),
+              Text(
+                text,
+                style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+     
