@@ -518,7 +518,7 @@ class _ChatPageState extends State<ChatPage> {
             isSelected: false,
             onTap: () {}, 
             index: index,
-            onLongPress: null,
+            onLongPress: () {},
             buildBottomButtons: (_, __) => const SizedBox.shrink(), 
             onUpdateChat: _updateChat,
             state: sessionController.aiState,
@@ -1569,7 +1569,6 @@ class _SplitBubbleWrapperState extends State<SplitBubbleWrapper> {
             alternativeContent: [null],
             style: widget.message.style,
             // 手动补全其他必须参数，避免报错
-            title: widget.message.title,
             resPath: [], 
             translate: null,
             visbility: widget.message.visbility,
