@@ -1510,7 +1510,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 }
 
-// ==================== 新增的拆分气泡包装器 ====================
+// ==================== 新增的拆分气泡包装器 (间距5.0 + 记忆模式) ====================
 class SplitBubbleWrapper extends StatefulWidget {
   final ChatModel chat;
   final MessageModel message;
@@ -1532,7 +1532,17 @@ class SplitBubbleWrapper extends StatefulWidget {
 }
 
 class _SplitBubbleWrapperState extends State<SplitBubbleWrapper> {
-  bool _isSplitMode = false; 
+  // 默认关闭，需要用户手动点一次才开启
+  static bool _globalIsSplitMode = false; 
+
+  // 本地状态
+  late bool _currentMode;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentMode = _globalIsSplitMode;
+  }
 
   List<String> _splitContent(String text) {
     return text.trim().split(RegExp(r'\n\s*\n+'));
@@ -1540,7 +1550,8 @@ class _SplitBubbleWrapperState extends State<SplitBubbleWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isSplitMode) {
+    // 合并模式
+    if (!_currentMode) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1560,37 +1571,31 @@ class _SplitBubbleWrapperState extends State<SplitBubbleWrapper> {
           final text = entry.value;
           final isFirst = index == 0;
 
-          // 构造临时消息对象
           final partMsg = MessageModel(
-            id: widget.message.id + index,
+            id: widget.message.id + index + 10000,
             content: text,
             senderId: widget.message.senderId,
             time: widget.message.time,
             alternativeContent: [null],
             style: widget.message.style,
-            // 手动补全其他必须参数，避免报错
-            resPath: [],
-            visbility: widget.message.visbility,
           );
+          if (widget.message.resPath.isNotEmpty) {
+             partMsg.resPath.addAll(widget.message.resPath);
+          }
+          partMsg.visbility = widget.message.visbility;
 
-          // 构建气泡
           Widget bubble = widget.partBubbleBuilder(partMsg);
 
-          // 通过 Stack 和 ClipRect 隐藏后续气泡的头像
-          // 这是一个视觉技巧，因为我们无法修改 MessageBubble 源码
           if (!isFirst) {
             return Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
+              // 【修改点1】间距设为 4.0，比 8.0 紧凑，比 2.0 宽松
+              padding: const EdgeInsets.only(bottom: 4.0),
               child: Stack(
                 children: [
                   bubble,
-                  // 用一个透明方块遮挡左侧头像区域，或者用 ClipRect 裁切
-                  // 这里简单使用 Padding 模拟对齐效果，如果不完美我们再调整
                   Positioned.fill(
                     child: Row(
                       children: [
-                        // 用背景色遮挡头像 (如果背景不是纯色，这个方法可能露馅)
-                        // 更稳妥的方法是修改 MessageBubble 源码，但现在先用这个试试
                         Container(
                           width: widget.avatarWidth - 8, 
                           color: Colors.transparent, 
@@ -1605,36 +1610,43 @@ class _SplitBubbleWrapperState extends State<SplitBubbleWrapper> {
           }
 
           return Padding(
-            padding: const EdgeInsets.only(bottom: 8.0),
+            // 【修改点2】这里也保持 4.0
+            padding: const EdgeInsets.only(bottom: 4.0),
             child: bubble,
           );
         }).toList(),
 
-        _buildToggleButton(context, "合并显示", Icons.unfold_less),
+        _buildToggleButton(context, "合并显示 (操作消息)", Icons.unfold_less),
       ],
     );
   }
 
   Widget _buildToggleButton(BuildContext context, String text, IconData icon) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: EdgeInsets.only(left: widget.avatarWidth, bottom: 12, top: 4),
+      padding: EdgeInsets.only(left: widget.avatarWidth, bottom: 12, top: 2),
       child: InkWell(
-        onTap: () => setState(() => _isSplitMode = !_isSplitMode),
+        onTap: () {
+          setState(() {
+            _currentMode = !_currentMode;
+            _globalIsSplitMode = _currentMode;
+          });
+        },
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+            color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 14, color: Theme.of(context).colorScheme.outline),
+              Icon(icon, size: 14, color: colorScheme.outline),
               const SizedBox(width: 4),
               Text(
                 text,
-                style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline),
+                style: TextStyle(fontSize: 11, color: colorScheme.outline),
               ),
             ],
           ),
@@ -1643,4 +1655,3 @@ class _SplitBubbleWrapperState extends State<SplitBubbleWrapper> {
     );
   }
 }
-     
